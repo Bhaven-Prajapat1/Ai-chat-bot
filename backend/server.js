@@ -1,18 +1,21 @@
+const cors = require("cors");
 require("dotenv").config();
 const app = require("./src/app");
 const { Server } = require("socket.io");
 const { createServer } = require("http");
-const gerateContent = require("./src/services/ai.service");
-const generateContent = require("./src/services/ai.service");
+const { generateContent } = require("./src/services/ai.service");
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
-  /* options */
+  cors: {
+    origin: "http://localhost:5173",
+  },
 });
 
 io.on("connection", (socket) => {
+  const chatHistory = [];
   // connect user
-  console.log("User connected");
+  console.log("User connected", socket.id);
 
   // disconnect user
   socket.on("disconnect", () => {
@@ -21,9 +24,17 @@ io.on("connection", (socket) => {
 
   // message event
   socket.on("ai-message", async (data) => {
-    const res = await generateContent(data);
+    chatHistory.push({
+      role: "user",
+      parts: [{ text: data }],
+    });
+    const res = await generateContent(chatHistory);
 
-    socket.emit("ai-msg-response", res);
+    chatHistory.push({
+      role: "model",
+      parts: [{ text: res }],
+    });
+    socket.emit("ai-message-res", res);
   });
 });
 
