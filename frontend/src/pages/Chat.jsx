@@ -1,31 +1,61 @@
 import { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 
+const TYPING_DELAY = 30; // ms per character
+
 const Chat = () => {
   const [message, setMessage] = useState("");
   const [socket, setSocket] = useState(null);
   const [conversation, setConversation] = useState([]);
-  const messagesEndRef = useRef(null); // Ref for auto-scroll
+  const [isTyping, setIsTyping] = useState(false);
+  const messagesEndRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
 
   const handleSend = () => {
-    if (message.trim() === "") return;
+    if (!message.trim()) return;
     setConversation((prev) => [...prev, { text: message, sender: "user" }]);
     setMessage("");
-    socket.emit("ai-message", message);
+    if (socket) {
+      socket.emit("ai-message", message);
+      setIsTyping(true);
+    }
+  };
+
+  const typeBotResponse = (fullText) => {
+    setIsTyping(true);
+    let i = 0;
+    const typeNext = () => {
+      setConversation((prev) => {
+        if (!prev.length || prev[prev.length - 1].sender !== "bot") {
+          return [...prev, { text: fullText.charAt(0), sender: "bot" }];
+        }
+        const updated = [...prev];
+        updated[updated.length - 1] = {
+          ...updated[updated.length - 1],
+          text: fullText.slice(0, i + 1),
+        };
+        return updated;
+      });
+      i++;
+      if (i < fullText.length) {
+        typingTimeoutRef.current = setTimeout(typeNext, TYPING_DELAY);
+      } else {
+        setTimeout(() => setIsTyping(false), 600);
+      }
+    };
+    typeNext();
   };
 
   useEffect(() => {
     const socketInstance = io("http://localhost:3000");
     setSocket(socketInstance);
-
-    socketInstance.on("ai-message-res", (res) => {
-      setConversation((prev) => [...prev, { text: res, sender: "bot" }]);
-    });
-
-    return () => socketInstance.disconnect();
+    socketInstance.on("ai-message-res", typeBotResponse);
+    return () => {
+      socketInstance.disconnect();
+      clearTimeout(typingTimeoutRef.current);
+    };
   }, []);
 
-  // Auto-scroll whenever conversation changes
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conversation]);
@@ -57,7 +87,7 @@ const Chat = () => {
               }`}
             >
               <div
-                className={`px-6 py-2  rounded-lg lg:max-w-[70%] break-words ${
+                className={`relative px-6 py-2 rounded-lg lg:max-w-[70%] break-words ${
                   msg.sender === "user"
                     ? "max-w-[75%] bg-[#303030db] text-white lg:text-lg rounded-br-none"
                     : "font-semibold text-amber-50 lg:text-lg bg-[#303030db] rounded-bl-none"
@@ -68,7 +98,7 @@ const Chat = () => {
             </div>
           ))
         )}
-        {/* Invisible element for auto-scroll */}
+        {isTyping && <div className="bot-msg typing-indicator">...</div>}
         <div ref={messagesEndRef} />
       </div>
 
